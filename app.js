@@ -1,39 +1,9 @@
-// Supabase Configuration
-const SUPABASE_URL = 'https://xbzyvpcqtmyhrtgkgizm.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_lqwGzBuvDXFT1stqUb_iDw_ta9DZlKt';
-
-// Global error handling for debugging
-window.onerror = function (msg, url, line, col, error) {
-    console.error("DEBUG ERROR:", msg, "at", line, ":", col);
-    if (document.getElementById('content-area')) {
-        document.getElementById('content-area').innerHTML += `<div class="card" style="border: 1px solid red; color: red; margin-top: 10px;"><b>Error de Aplicación:</b> ${msg}</div>`;
-    }
-    return false;
-};
-
-window.onunhandledrejection = function (event) {
-    console.error("DEBUG PROMISE REJECTION:", event.reason);
-    if (document.getElementById('content-area')) {
-        document.getElementById('content-area').innerHTML += `<div class="card" style="border: 1px solid red; color: red; margin-top: 10px;"><b>Error de Conexión:</b> ${event.reason.message || event.reason}</div>`;
-    }
-};
-
+// Supabase client instance
 let supabaseClient;
 
-async function initializeSupabase() {
-    if (typeof supabase === 'undefined') {
-        console.error("Supabase library not loaded!");
-        return null;
-    }
-    const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    console.log("Supabase client created:", client);
-    return client;
-}
-
-// ... (skipping some unchanged lines in my thought, but tool will use TargetContent)
 
 // State Management
-let currentSection = 'miembros';
+let currentSection = 'inicio';
 let cachedData = {
     miembros: [],
     padrinos: [],
@@ -159,6 +129,9 @@ async function loadSection(section) {
     showLoading();
 
     switch (section) {
+        case 'inicio':
+            await renderDashboard();
+            break;
         case 'miembros':
             await renderMiembros();
             break;
@@ -174,27 +147,133 @@ async function loadSection(section) {
     }
 }
 
-function showLoading() {
-    contentArea.innerHTML = `
-        <div class="loading-spinner">
-            <div class="spinner"></div>
-            <p>Cargando datos desde Supabase...</p>
-        </div>
-    `;
-    lucide.createIcons();
-}
+// (Utility functions showLoading and updateStatsBadge moved to utils.js)
 
-async function updateStatsBadge() {
+
+// --- DASHBOARD SECTION ---
+async function renderDashboard() {
+    sectionTitle.textContent = 'Panel de Inicio';
+    sectionDescription.textContent = 'Resumen estadístico del padrón de miembros.';
+
+    contentArea.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><p>Calculando estadísticas...</p></div>`;
+
     try {
-        const { count, error } = await supabaseClient
-            .from('miembros')
-            .select('*', { count: 'exact', head: true });
+        // Fetch data for statistics
+        const [miembrosRes, sexoRes, dlRes, dfRes] = await Promise.all([
+            supabaseClient.from('miembros').select('sexo, dl, df'),
+            supabaseClient.from('sexo').select('*'),
+            supabaseClient.from('dl').select('*'),
+            supabaseClient.from('df').select('*')
+        ]);
 
-        if (!error) {
-            statsSummary.textContent = `${count.toLocaleString()} Miembros en total`;
-        }
-    } catch (e) {
-        console.error("Error fetching stats:", e);
+        if (miembrosRes.error) throw miembrosRes.error;
+
+        const data = miembrosRes.data;
+        const total = data.length;
+
+        // Breakdowns
+        const stats = {
+            sexo: {},
+            dl: {},
+            df: {}
+        };
+
+        const sexoMap = {};
+        sexoRes.data?.forEach(s => sexoMap[s.sexid] = s.sexo);
+
+        const dlMap = {};
+        dlRes.data?.forEach(d => dlMap[d.dlid] = d.dl);
+
+        const dfMap = {};
+        dfRes.data?.forEach(d => dfMap[d.dfid] = d.df);
+
+        data.forEach(m => {
+            // Sexo
+            const sName = sexoMap[m.sexo] || 'Sin especificar';
+            stats.sexo[sName] = (stats.sexo[sName] || 0) + 1;
+            // DL
+            const dlLabel = dlMap[m.dl] || m.dl || 'Sin DL';
+            stats.dl[dlLabel] = (stats.dl[dlLabel] || 0) + 1;
+            // DF
+            const dfLabel = dfMap[m.df] || m.df || 'Sin DF';
+            stats.df[dfLabel] = (stats.df[dfLabel] || 0) + 1;
+        });
+
+        const dashboardHtml = `
+            <div class="dashboard-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px;">
+                <!-- Total Miembros -->
+                <div class="card metric-card" style="border-left: 5px solid #4f46e5;">
+                    <div class="report-header">
+                        <i data-lucide="users" style="color: #4f46e5; background: rgba(79, 70, 229, 0.1);"></i>
+                        <div>
+                            <p class="metric-label">Total Miembros</p>
+                            <h2 class="metric-value" style="color: #1e1b4b; font-size: 2.5rem; margin: 5px 0;">${total.toLocaleString()}</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Por Sexo -->
+                <div class="card metric-card" style="border-left: 5px solid #ec4899;">
+                    <div class="report-header" style="margin-bottom: 15px;">
+                        <i data-lucide="user-plus" style="color: #ec4899; background: rgba(236, 72, 153, 0.1);"></i>
+                        <div>
+                            <p class="metric-label">Distribución por Sexo</p>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${Object.entries(stats.sexo).map(([key, val]) => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px dashed #eee;">
+                                <span style="font-size: 0.9rem; font-weight: 500;">${key}</span>
+                                <span class="status-badge-inline" style="background: #fdf2f8; color: #be185d;">${val}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Por Distrito Local -->
+                <div class="card metric-card" style="border-left: 5px solid #f59e0b;">
+                    <div class="report-header" style="margin-bottom: 15px;">
+                        <i data-lucide="map-pin" style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);"></i>
+                        <div>
+                            <p class="metric-label">Por Distrito Local (DL)</p>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        ${Object.entries(stats.dl).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([key, val]) => `
+                            <div style="display: flex; flex-direction: column; background: #fffbeb; padding: 8px; border-radius: 8px;">
+                                <span style="font-size: 0.75rem; color: #92400e; text-transform: uppercase; font-weight: 700;">${key.startsWith('DL') ? key : 'DL ' + key}</span>
+                                <span style="font-size: 1.1rem; font-weight: 700; color: #451a03;">${val}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Por Distrito Federal -->
+                <div class="card metric-card" style="border-left: 5px solid #10b981;">
+                    <div class="report-header" style="margin-bottom: 15px;">
+                        <i data-lucide="globe" style="color: #10b981; background: rgba(16, 185, 129, 0.1);"></i>
+                        <div>
+                            <p class="metric-label">Por Distrito Federal (DF)</p>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        ${Object.entries(stats.df).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([key, val]) => `
+                            <div style="display: flex; flex-direction: column; background: #ecfdf5; padding: 8px; border-radius: 8px;">
+                                <span style="font-size: 0.75rem; color: #065f46; text-transform: uppercase; font-weight: 700;">${key.startsWith('DF') ? key : 'DF ' + key}</span>
+                                <span style="font-size: 1.1rem; font-weight: 700; color: #064e3b;">${val}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        contentArea.innerHTML = dashboardHtml;
+        lucide.createIcons();
+
+    } catch (err) {
+        console.error("Dashboard error:", err);
+        contentArea.innerHTML = `<div class="card">Error al cargar estadísticas: ${err.message}</div>`;
     }
 }
 
@@ -402,8 +481,14 @@ async function renderPadrinos() {
         return;
     }
 
+    cachedData.padrinos = data;
+
     contentArea.innerHTML = `
         <div class="controls-row">
+            <div class="search-box">
+                <i data-lucide="search"></i>
+                <input type="text" id="padrinos-search" placeholder="Buscar padrino por nombre...">
+            </div>
             <div style="display: flex; gap: 12px; margin-left: auto;">
                 <button class="btn btn-primary" onclick="addPadrino()">
                     <i data-lucide="plus" style="width: 18px;"></i> Nuevo Padrino
@@ -418,7 +503,7 @@ async function renderPadrinos() {
                         <th>Nombre del Padrino</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="padrinos-table-body">
                     ${data.map(p => `
                         <tr>
                             <td>
@@ -434,6 +519,33 @@ async function renderPadrinos() {
             </table>
         </div>
         `;
+    lucide.createIcons();
+
+    // Add search listener
+    document.getElementById('padrinos-search').addEventListener('input', (e) => {
+        const term = e.target.value.toLowerCase().trim();
+        const filtered = cachedData.padrinos.filter(p =>
+            (p.padrino || "").toLowerCase().includes(term)
+        );
+        updatePadrinosTable(filtered);
+    });
+}
+
+function updatePadrinosTable(data) {
+    const tbody = document.getElementById('padrinos-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.map(p => `
+        <tr>
+            <td>
+                <div class="action-buttons-cell">
+                    <button class="btn-icon" title="Editar" onclick="editPadrino('${p.padrinoid}')"><i data-lucide="square-pen" style="width: 16px;"></i></button>
+                    <button class="btn-icon btn-delete" title="Borrar" onclick="deletePadrino('${p.padrinoid}')"><i data-lucide="trash-2" style="width: 16px;"></i></button>
+                </div>
+            </td>
+            <td>${p.padrino}</td>
+        </tr>
+    `).join('');
     lucide.createIcons();
 }
 
@@ -643,6 +755,46 @@ async function renderReportes() {
                 </button>
             </div>
         </div>
+
+        <!-- REPORTE PERSONALIZADO (GENERAL) -->
+        <div class="card report-card full-width" style="grid-column: 1 / -1;">
+            <div class="report-header">
+                <i data-lucide="settings" class="icon-custom" style="color: #6366f1;"></i>
+                <div>
+                    <h4>Reporte General (Personalizado)</h4>
+                    <p>Selecciona los campos que deseas incluir en el reporte de todos los miembros.</p>
+                </div>
+            </div>
+            <div class="custom-fields-select-actions" style="margin-bottom: 10px; display: flex; gap: 15px;">
+                <button type="button" class="btn-link" onclick="toggleAllReportFields(true)" style="background: none; border: none; color: #4f46e5; cursor: pointer; padding: 0; font-size: 0.875rem; text-decoration: underline;">Seleccionar Todos</button>
+                <button type="button" class="btn-link" onclick="toggleAllReportFields(false)" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 0; font-size: 0.875rem; text-decoration: underline;">Deseleccionar Todos</button>
+            </div>
+            <div class="custom-fields-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; padding: 15px; background: #f8fafc; border-radius: 8px;">
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="nombres" checked> Nombres</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="paterno" checked> Apellido Paterno</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="materno" checked> Apellido Materno</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="nombre_completo"> Nombre Completo</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="sexo" checked> Sexo</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="ine" checked> INE</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="celular" checked> Celular</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="colonia" checked> Colonia</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="seccion" checked> Sección</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="calle"> Calle</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="num"> Número</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="status"> Estatus</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="padrino"> Padrino</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="email"> Email</label>
+                <label style="display: flex; gap: 8px; cursor: pointer;"><input type="checkbox" name="custom-field" value="fecha_afiliacion"> Fecha Afiliación</label>
+            </div>
+            <div class="report-actions" style="justify-content: flex-end;">
+                <button class="btn btn-export btn-csv" onclick="exportReport('miembros_custom', 'csv')">
+                    <i data-lucide="file-spreadsheet"></i> Exportar CSV
+                </button>
+                <button class="btn btn-export btn-pdf" onclick="exportReport('miembros_custom', 'pdf')">
+                    <i data-lucide="file-text"></i> Vista Previa (PDF)
+                </button>
+            </div>
+        </div>
     </div>
     `;
 
@@ -650,40 +802,84 @@ async function renderReportes() {
     lucide.createIcons();
 }
 
+window.toggleAllReportFields = function (checked) {
+    const checkboxes = document.querySelectorAll('input[name="custom-field"]');
+    checkboxes.forEach(cb => cb.checked = checked);
+}
+
 window.exportReport = async function (type, format) {
     let elementId = `report-val-${type}`;
     if (type === 'dl') elementId = 'report-local-val-dl';
     if (type === 'df') elementId = 'report-federal-val-df';
 
-    const valElement = document.getElementById(elementId);
-    const value = valElement.value;
-    if (!value) return alert("Por favor selecciona un valor para el reporte.");
+    let value = null;
+    let label = "General";
+
+    if (type !== 'miembros_custom') {
+        const valElement = document.getElementById(elementId);
+        value = valElement.value;
+        if (!value) return alert("Por favor selecciona un valor para el reporte.");
+        label = valElement.options[valElement.selectedIndex].text;
+    }
+
+    // Selected fields for custom report or defaults for others
+    let selectedFields = [];
+    const fieldMapping = {
+        'id': 'ID',
+        'nombres': 'Nombre',
+        'paterno': 'Apellido Paterno',
+        'materno': 'Apellido Materno',
+        'nombre_completo': 'Nombre Completo',
+        'calle': 'Calle',
+        'num': 'Num',
+        'colonia': 'Colonia',
+        'cp': 'CP',
+        'seccion': 'Sección',
+        'status': 'Status',
+        'padrino': 'Padrino',
+        'sexo': 'Sexo',
+        'celular': 'Celular',
+        'email': 'Email',
+        'ine': 'INE',
+        'fecha_afiliacion': 'Fecha Afiliación'
+    };
+
+    if (type === 'miembros_custom') {
+        const checkboxes = document.querySelectorAll('input[name="custom-field"]:checked');
+        selectedFields = Array.from(checkboxes).map(cb => cb.value);
+        if (selectedFields.length === 0) return alert("Selecciona al menos un campo para exportar.");
+    } else {
+        // Default fields for standard reports
+        selectedFields = ['nombre_completo', 'ine', 'colonia', 'calle', 'num', 'seccion', 'status', 'padrino', 'celular'];
+    }
 
     // Fetch lookups for names
-    const [statusRes, padrinosRes] = await Promise.all([
+    const [statusRes, padrinosRes, sexoRes] = await Promise.all([
         supabaseClient.from('status').select('*'),
-        supabaseClient.from('padrinos').select('*')
+        supabaseClient.from('padrinos').select('*'),
+        supabaseClient.from('sexo').select('*')
     ]);
     const statusMap = {};
     statusRes.data?.forEach(s => statusMap[s.idst] = s.status);
     const padrinosMap = {};
     padrinosRes.data?.forEach(p => padrinosMap[p.padrinoid] = p.padrino);
+    const sexoMap = {};
+    sexoRes.data?.forEach(s => sexoMap[s.idsexo] = s.sexo);
 
     let query = supabaseClient.from('miembros').select('*');
     if (type === 'status') query = query.eq(type, value);
     else if (type === 'colonia') query = query.eq('colonia', value);
     else if (type === 'padrino') query = query.eq('padrino', value);
+    else if (type === 'miembros_custom') { /* no filter, fetch all */ }
     else query = query.eq(type, value);
 
     const { data, error } = await query;
 
     if (error) return alert("Error al obtener datos: " + error.message);
-    if (!data || data.length === 0) return alert("No se encontraron registros para este filtro.");
-
-    const label = valElement.options[valElement.selectedIndex].text;
+    if (!data || data.length === 0) return alert("No se encontraron registros.");
 
     if (format === 'csv') {
-        const csv = generateCSV(data, statusMap, padrinosMap);
+        const csv = generateCSV(data, statusMap, padrinosMap, selectedFields, fieldMapping);
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -699,7 +895,7 @@ window.exportReport = async function (type, format) {
         printWindow.document.write(`
             <html>
             <head>
-                <title>Reporte Miembros - ${type}: ${label}</title>
+                <title>Reporte Miembros - ${label}</title>
                 <style>
                     @page { size: landscape; margin: 10mm; }
                     body { font-family: sans-serif; padding: 10px; }
@@ -714,7 +910,7 @@ window.exportReport = async function (type, format) {
                 <h2>Reporte de Miembros</h2>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                     <div>
-                        <p><b>Filtro:</b> ${type.toUpperCase()} = ${label}</p>
+                        <p><b>Reporte:</b> ${type === 'miembros_custom' ? 'General' : label}</p>
                         <p><b>Total registros:</b> ${data.length}</p>
                     </div>
                     <p><b>Fecha:</b> ${new Date().toLocaleDateString()}</p>
@@ -722,27 +918,21 @@ window.exportReport = async function (type, format) {
                 <table>
                     <thead>
                         <tr>
-                            <th>Nombre Completo</th>
-                            <th>INE</th>
-                            <th>Colonia</th>
-                            <th>Calle / Num</th>
-                            <th>Sección</th>
-                            <th>Status</th>
-                            <th>Padrino</th>
-                            <th>Celular</th>
+                            ${selectedFields.map(f => `<th>${fieldMapping[f]}</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>
                         ${data.map(m => `
                             <tr>
-                                <td>${m.nombre_completo || (m.nombres + ' ' + m.paterno + ' ' + m.materno)}</td>
-                                <td>${m.ine || '-'}</td>
-                                <td>${m.colonia || '-'}</td>
-                                <td>${(m.calle || '') + ' ' + (m.num || '')}</td>
-                                <td>${m.seccion || '-'}</td>
-                                <td>${statusMap[m.status] || m.status || '-'}</td>
-                                <td>${padrinosMap[m.padrino] || m.padrino || '-'}</td>
-                                <td>${m.celular || '-'}</td>
+                                ${selectedFields.map(f => {
+            let val = m[f];
+            if (f === 'nombre_completo' && !val) val = (m.nombres + ' ' + m.paterno + ' ' + m.materno);
+            if (f === 'status') val = statusMap[m[f]] || m[f];
+            if (f === 'padrino') val = padrinosMap[m[f]] || m[f];
+            if (f === 'sexo') val = sexoMap[m[f]] || m[f];
+            if (f === 'calle' && m['num']) val = (m.calle || '') + ' ' + (m.num || '');
+            return `<td>${val || '-'}</td>`;
+        }).join('')}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -757,36 +947,8 @@ window.exportReport = async function (type, format) {
     }
 }
 
-function generateCSV(data, statusMap, padrinosMap) {
-    const headers = ["ID", "Nombre", "Paterno", "Materno", "Nombre Completo", "Calle", "Num", "Colonia", "CP", "Seccion", "Status", "Padrino", "Celular", "Email", "INE"];
-    const rows = data.map(m => [
-        m.id,
-        m.nombres,
-        m.paterno,
-        m.materno,
-        m.nombre_completo,
-        m.calle,
-        m.num,
-        m.colonia,
-        m.cp,
-        m.seccion,
-        statusMap[m.status] || m.status,
-        padrinosMap[m.padrino] || m.padrino,
-        m.celular,
-        m.email,
-        m.ine
-    ]);
+// (Utility function generateCSV moved to utils.js)
 
-    let csvContent = headers.join(",") + "\n";
-    rows.forEach(row => {
-        const rowStr = row.map(val => {
-            const str = (val === null || val === undefined) ? "" : String(val);
-            return `"${str.replace(/"/g, '""')}"`;
-        }).join(",");
-        csvContent += rowStr + "\n";
-    });
-    return csvContent;
-}
 
 function renderReportTable(data, statusMap) {
     let existingTable = document.getElementById('report-detail-table');
@@ -876,6 +1038,7 @@ let currentEditingId = null;
 function openModal(title, contentHtml, type, id) {
     modalTitle.textContent = title;
     editForm.innerHTML = contentHtml;
+    editForm.setAttribute('novalidate', ''); // Remove browser-level mandatory requirements
     currentEditingType = type;
     currentEditingId = id;
     modalOverlay.classList.remove('hidden');
@@ -900,7 +1063,14 @@ saveBtn.onclick = async () => {
     const formData = new FormData(editForm);
     const updates = {};
     formData.forEach((value, key) => {
-        updates[key] = value;
+        // Broad sanitization: Convert any empty string to null. 
+        // This effectively makes all fields optional from the database's perspective 
+        // and avoids "bigint" or other type conversion errors for empty inputs.
+        if (value === "") {
+            updates[key] = null;
+        } else {
+            updates[key] = value;
+        }
     });
 
     saveBtn.disabled = true;
@@ -988,44 +1158,34 @@ async function showMiembroForm(record, id) {
         <div class="form-grid">
             <div class="form-section">
                 <h3>Información Personal</h3>
-                <div class="form-group">
-                    <label>Nombre Completo (Manual)</label>
-                    <input type="text" name="nombre_completo" value="${record.nombre_completo || ''}">
-                </div>
+                
                 <div class="row">
                     <div class="form-group flex-2">
                         <label>Nombres</label>
-                        <input type="text" name="nombres" value="${record.nombres || ''}">
+                        <input type="text" name="nombres" id="field-nombres" value="${record.nombres || ''}">
                     </div>
-                    <div class="form-group flex-1">
-                        <label>Sexo</label>
-                        <select name="sexo" id="field-sexo">
-                            <option value="">Seleccione...</option>
-                            ${sexList?.map(s => `<option value="${s.sexid}" ${record.sexo == s.sexid ? 'selected' : ''}>${s.sexo}</option>`).join('')}
-                        </select>
-                    </div>
-                </div>
-                <div class="row">
                     <div class="form-group">
                         <label>Apellido Paterno</label>
-                        <input type="text" name="paterno" value="${record.paterno || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Apellido Materno</label>
-                        <input type="text" name="materno" value="${record.materno || ''}">
+                        <input type="text" name="paterno" id="field-paterno" value="${record.paterno || ''}">
                     </div>
                 </div>
+
+                <div class="row">
+                    <div class="form-group">
+                        <label>Apellido Materno</label>
+                        <input type="text" name="materno" id="field-materno" value="${record.materno || ''}">
+                    </div>
+                    <div class="form-group flex-2">
+                        <label>Nombre Completo (Automático)</label>
+                        <input type="text" name="nombre_completo" id="field-nombre-completo" value="${record.nombre_completo || ''}" readonly style="background-color: #f9f9f9; cursor: not-allowed;">
+                    </div>
+                </div>
+
                 <div class="row">
                     <div class="form-group">
                         <label>INE</label>
                         <input type="text" name="ine" id="field-ine" value="${record.ine || ''}">
                     </div>
-                    <div class="form-group">
-                        <label>Fecha Afiliación</label>
-                        <input type="text" name="fecha_afiliacion" value="${record.fecha_afiliacion || ''}" placeholder="dd/mm/año">
-                    </div>
-                </div>
-                <div class="row">
                     <div class="form-group">
                         <label>Día Nacimiento</label>
                         <select name="dia">
@@ -1033,12 +1193,26 @@ async function showMiembroForm(record, id) {
                             ${diaList?.map(d => `<option value="${d.dia}" ${record.dia == d.dia ? 'selected' : ''}>${d.dia}</option>`).join('')}
                         </select>
                     </div>
+                </div>
+
+                <div class="row">
                     <div class="form-group">
                         <label>Mes Nacimiento</label>
                         <select name="mes">
                             <option value="">Mes</option>
                             ${mesList?.map(m => `<option value="${m.mes}" ${record.mes == m.mes ? 'selected' : ''}>${m.mes}</option>`).join('')}
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sexo</label>
+                        <select name="sexo" id="field-sexo">
+                            <option value="">Seleccione...</option>
+                            ${sexList?.map(s => `<option value="${s.sexid}" ${record.sexo == s.sexid ? 'selected' : ''}>${s.sexo}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Fecha Afiliación</label>
+                        <input type="text" name="fecha_afiliacion" value="${record.fecha_afiliacion || ''}" placeholder="dd/mm/año">
                     </div>
                 </div>
             </div>
@@ -1159,25 +1333,40 @@ async function showMiembroForm(record, id) {
     const title = id ? "Editar Miembro" : "Agregar Nuevo Miembro";
     openModal(title, html, 'miembro', id);
 
-    // Auto-detection logic for INE
+    // Form logic: Auto-concatenation and INE detection
+    const nombresInput = document.getElementById('field-nombres');
+    const paternoInput = document.getElementById('field-paterno');
+    const maternoInput = document.getElementById('field-materno');
+    const fullInput = document.getElementById('field-nombre-completo');
     const ineInput = document.getElementById('field-ine');
     const sexoSelect = document.getElementById('field-sexo');
 
-    if (ineInput && sexoSelect) {
-        const detectFromINE = () => {
-            const val = ineInput.value.toUpperCase();
-            if (val.length >= 15) {
-                const char15 = val.charAt(14); // Index 14 is the 15th character
-                if (char15 === 'H') {
-                    sexoSelect.value = '2'; // 2 = MASC
-                } else if (char15 === 'M') {
-                    sexoSelect.value = '1'; // 1 = FEM
-                }
-            }
-        };
+    const updateFullName = () => {
+        const n = nombresInput.value.trim();
+        const p = paternoInput.value.trim();
+        const m = maternoInput.value.trim();
+        fullInput.value = `${n} ${p} ${m}`.trim().replace(/\s+/g, ' ');
+    };
 
-        ineInput.addEventListener('input', detectFromINE);
-        // Run immediately in case the field is already populated
+    const detectFromINE = () => {
+        const val = ineInput.value.toUpperCase();
+        if (val.length >= 15) {
+            const char15 = val.charAt(14);
+            if (char15 === 'H') {
+                sexoSelect.value = '2'; // 2 = MASC
+            } else if (char15 === 'M') {
+                sexoSelect.value = '1'; // 1 = FEM
+            }
+        }
+    };
+
+    if (nombresInput) nombresInput.addEventListener('input', updateFullName);
+    if (paternoInput) paternoInput.addEventListener('input', updateFullName);
+    if (maternoInput) maternoInput.addEventListener('input', updateFullName);
+    if (ineInput) ineInput.addEventListener('input', detectFromINE);
+
+    // Trigger initial detection if edit mode
+    if (id) {
         detectFromINE();
     }
 }
