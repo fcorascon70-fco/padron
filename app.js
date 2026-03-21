@@ -159,16 +159,35 @@ async function renderDashboard() {
 
     try {
         // Fetch data for statistics
-        const [miembrosRes, sexoRes, dlRes, dfRes] = await Promise.all([
-            supabaseClient.from('miembros').select('sexo, dl, df'),
+        const [sexoRes, dlRes, dfRes] = await Promise.all([
             supabaseClient.from('sexo').select('*'),
             supabaseClient.from('dl').select('*'),
             supabaseClient.from('df').select('*')
         ]);
 
-        if (miembrosRes.error) throw miembrosRes.error;
+        // Batched fetching to overcome Supabase 1000 limit
+        let data = [];
+        let from = 0;
+        const limit = 1000;
+        let hasMore = true;
 
-        const data = miembrosRes.data;
+        while (hasMore) {
+            const { data: batchData, error } = await supabaseClient
+                .from('miembros')
+                .select('sexo, dl, df')
+                .range(from, from + limit - 1);
+
+            if (error) throw error;
+
+            data = [...data, ...batchData];
+
+            if (batchData.length < limit) {
+                hasMore = false;
+            } else {
+                from += limit;
+            }
+        }
+
         const total = data.length;
 
         // Breakdowns
