@@ -57,14 +57,14 @@ async function updateStatsBadge() {
     }
 }
 
-function generateCSV(data, statusMap, padrinosMap, selectedFields, fieldMapping) {
-    const headers = selectedFields.map(f => fieldMapping[f]);
+function generateCSV(data, statusMap, padrinosMap, sexoMap, selectedFields, fieldMapping) {
+    const headers = selectedFields.map(f => fieldMapping[f] || f);
     const rows = data.map(m => selectedFields.map(f => {
         let val = m[f];
-        if (f === 'nombre_completo' && !val) val = `${m.nombres} ${m.paterno} ${m.materno}`;
-        if (f === 'status') val = statusMap[m[f]] || m[f];
-        if (f === 'padrino') val = padrinosMap[m[f]] || m[f];
-        if (f === 'sexo') val = (window.sexoMap && window.sexoMap[m[f]]) || m[f];
+        if (f === 'nombre_completo' && !val) val = `${m.nombres || ''} ${m.paterno || ''} ${m.materno || ''}`.trim();
+        if (f === 'status') val = (statusMap && statusMap[m[f]]) || m[f];
+        if (f === 'padrino') val = (padrinosMap && padrinosMap[m[f]]) || m[f];
+        if (f === 'sexo') val = (sexoMap && sexoMap[m[f]]) || m[f];
         return val;
     }));
 

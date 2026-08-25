@@ -883,23 +883,45 @@ window.exportReport = async function (type, format) {
     const padrinosMap = {};
     padrinosRes.data?.forEach(p => padrinosMap[p.padrinoid] = p.padrino);
     const sexoMap = {};
-    sexoRes.data?.forEach(s => sexoMap[s.idsexo] = s.sexo);
+    sexoRes.data?.forEach(s => sexoMap[s.sexid] = s.sexo);
 
-    let query = supabaseClient.from('miembros').select('*');
-    if (type === 'status') query = query.eq(type, value);
-    else if (type === 'colonia') query = query.eq('colonia', value);
-    else if (type === 'padrino') query = query.eq('padrino', value);
-    else if (type === 'miembros_custom') { /* no filter, fetch all */ }
-    else query = query.eq(type, value);
+    // Fetch all records with pagination to handle Supabase 1000 limit
+    let data = [];
+    let from = 0;
+    const limit = 1000;
+    let hasMore = true;
 
-    const { data, error } = await query;
+    try {
+        while (hasMore) {
+            let query = supabaseClient.from('miembros').select('*').range(from, from + limit - 1);
+            if (type === 'status') query = query.eq('status', value);
+            else if (type === 'colonia') query = query.eq('colonia', value);
+            else if (type === 'padrino') query = query.eq('padrino', value);
+            else if (type === 'seccion') query = query.eq('seccion', value);
+            else if (type === 'dl') query = query.eq('dl', value);
+            else if (type === 'df') query = query.eq('df', value);
+            else if (type === 'miembros_custom') { /* fetch all */ }
+            else query = query.eq(type, value);
 
-    if (error) return alert("Error al obtener datos: " + error.message);
+            const { data: batchData, error } = await query;
+            if (error) throw error;
+
+            data = [...data, ...batchData];
+            if (batchData.length < limit) {
+                hasMore = false;
+            } else {
+                from += limit;
+            }
+        }
+    } catch (err) {
+        return alert("Error al obtener datos: " + err.message);
+    }
+
     if (!data || data.length === 0) return alert("No se encontraron registros.");
 
     if (format === 'csv') {
-        const csv = generateCSV(data, statusMap, padrinosMap, selectedFields, fieldMapping);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const csv = generateCSV(data, statusMap, padrinosMap, sexoMap, selectedFields, fieldMapping);
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
@@ -949,7 +971,6 @@ window.exportReport = async function (type, format) {
             if (f === 'status') val = statusMap[m[f]] || m[f];
             if (f === 'padrino') val = padrinosMap[m[f]] || m[f];
             if (f === 'sexo') val = sexoMap[m[f]] || m[f];
-            if (f === 'calle' && m['num']) val = (m.calle || '') + ' ' + (m.num || '');
             return `<td>${val || '-'}</td>`;
         }).join('')}
                             </tr>
@@ -977,7 +998,7 @@ function renderReportTable(data, statusMap) {
     tableDiv.id = 'report-detail-table';
     tableDiv.className = 'card mt-4';
     tableDiv.innerHTML = `
-        < h3 style = "margin-bottom: 16px;" > Detalle del Reporte(Top 500)</h3 >
+        <h3 style="margin-bottom: 16px;">Detalle del Reporte (Top 500)</h3>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1172,7 +1193,7 @@ saveBtn.onclick = async () => {
 
 // Action Handlers
 window.editMiembro = async function (id) {
-    const record = cachedData.miembros.find(m => m.id === id) ||
+    const record = cachedData.miembros.find(m => m.id == id) ||
         (await supabaseClient.from('miembros').select('*').eq('id', id).single()).data;
 
     if (!record) return alert("No se encontró el registro");
@@ -1492,6 +1513,7 @@ window.deleteMiembro = async function (id) {
         if (error) throw error;
         alert("Miembro eliminado exitosamente");
         loadSection('miembros');
+        if (typeof updateStatsBadge === 'function') updateStatsBadge();
     } catch (err) {
         console.error("Error deleting miembro:", err);
         alert("Error al eliminar: " + err.message);
