@@ -1104,18 +1104,51 @@ saveBtn.onclick = async () => {
                 result = await supabaseClient.from('miembros').update(updates).eq('id', currentEditingId);
             } else {
                 console.log("Inserting new miembro");
+                // Get next available ID
+                const { data: maxRecord, error: maxErr } = await supabaseClient
+                    .from('miembros')
+                    .select('id')
+                    .order('id', { ascending: false })
+                    .limit(1);
+                if (maxErr) throw maxErr;
+                const nextId = (maxRecord && maxRecord.length > 0 && maxRecord[0].id != null) ? (parseInt(maxRecord[0].id, 10) + 1) : 1;
+                updates.id = nextId;
+
+                // Fallback for nombre_completo if not set
+                if (!updates.nombre_completo && (updates.nombres || updates.paterno || updates.materno)) {
+                    updates.nombre_completo = `${updates.nombres || ''} ${updates.paterno || ''} ${updates.materno || ''}`.trim().replace(/\s+/g, ' ');
+                }
+
                 result = await supabaseClient.from('miembros').insert([updates]);
             }
         } else if (currentEditingType === 'padrino') {
             if (currentEditingId) {
                 result = await supabaseClient.from('padrinos').update(updates).eq('padrinoid', currentEditingId);
             } else {
+                const { data: maxRecord, error: maxErr } = await supabaseClient
+                    .from('padrinos')
+                    .select('padrinoid')
+                    .order('padrinoid', { ascending: false })
+                    .limit(1);
+                if (maxErr) throw maxErr;
+                const nextId = (maxRecord && maxRecord.length > 0 && maxRecord[0].padrinoid != null) ? (parseInt(maxRecord[0].padrinoid, 10) + 1) : 1;
+                updates.padrinoid = nextId;
+
                 result = await supabaseClient.from('padrinos').insert([updates]);
             }
         } else if (currentEditingType === 'status') {
             if (currentEditingId) {
                 result = await supabaseClient.from('status').update(updates).eq('idst', currentEditingId);
             } else {
+                const { data: maxRecord, error: maxErr } = await supabaseClient
+                    .from('status')
+                    .select('idst')
+                    .order('idst', { ascending: false })
+                    .limit(1);
+                if (maxErr) throw maxErr;
+                const nextId = (maxRecord && maxRecord.length > 0 && maxRecord[0].idst != null) ? (parseInt(maxRecord[0].idst, 10) + 1) : 1;
+                updates.idst = nextId;
+
                 result = await supabaseClient.from('status').insert([updates]);
             }
         } else {
@@ -1127,6 +1160,7 @@ saveBtn.onclick = async () => {
         alert('Cambios guardados exitosamente');
         closeModal();
         loadSection(currentSection); // Refresh view
+        if (typeof updateStatsBadge === 'function') updateStatsBadge();
     } catch (err) {
         console.error("Error saving:", err);
         alert("Error al guardar: " + err.message);
