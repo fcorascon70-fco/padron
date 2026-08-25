@@ -78,3 +78,36 @@ function generateCSV(data, statusMap, padrinosMap, sexoMap, selectedFields, fiel
     });
     return csvContent;
 }
+
+// Toast Notifications (Center-Center, Color Green)
+function showToast(message, type = 'success', duration = 3000) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+
+    const iconName = type === 'error' ? 'alert-circle' : (type === 'warning' ? 'alert-triangle' : 'check-circle-2');
+    toast.innerHTML = `
+        <i data-lucide="${iconName}" style="width: 26px; height: 26px; flex-shrink: 0;"></i>
+        <span>${message}</span>
+    `;
+
+    container.appendChild(toast);
+    if (window.lucide) {
+        lucide.createIcons();
+    }
+
+    setTimeout(() => {
+        toast.classList.add('toast-out');
+        setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 300);
+    }, duration);
+}
+window.showToast = showToast;

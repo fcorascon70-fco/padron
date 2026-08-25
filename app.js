@@ -837,7 +837,7 @@ window.exportReport = async function (type, format) {
     if (type !== 'miembros_custom') {
         const valElement = document.getElementById(elementId);
         value = valElement.value;
-        if (!value) return alert("Por favor selecciona un valor para el reporte.");
+        if (!value) return showToast("Por favor selecciona un valor para el reporte.", 'warning');
         label = valElement.options[valElement.selectedIndex].text;
     }
 
@@ -866,7 +866,7 @@ window.exportReport = async function (type, format) {
     if (type === 'miembros_custom') {
         const checkboxes = document.querySelectorAll('input[name="custom-field"]:checked');
         selectedFields = Array.from(checkboxes).map(cb => cb.value);
-        if (selectedFields.length === 0) return alert("Selecciona al menos un campo para exportar.");
+        if (selectedFields.length === 0) return showToast("Selecciona al menos un campo para exportar.", 'warning');
     } else {
         // Default fields for standard reports
         selectedFields = ['nombre_completo', 'ine', 'colonia', 'calle', 'num', 'seccion', 'status', 'padrino', 'celular'];
@@ -914,10 +914,10 @@ window.exportReport = async function (type, format) {
             }
         }
     } catch (err) {
-        return alert("Error al obtener datos: " + err.message);
+        return showToast("Error al obtener datos: " + err.message, 'error');
     }
 
-    if (!data || data.length === 0) return alert("No se encontraron registros.");
+    if (!data || data.length === 0) return showToast("No se encontraron registros.", 'warning');
 
     if (format === 'csv') {
         const csv = generateCSV(data, statusMap, padrinosMap, sexoMap, selectedFields, fieldMapping);
@@ -1178,13 +1178,13 @@ saveBtn.onclick = async () => {
 
         if (result.error) throw result.error;
 
-        alert('Cambios guardados exitosamente');
+        showToast('Cambios guardados exitosamente', 'success');
         closeModal();
         loadSection(currentSection); // Refresh view
         if (typeof updateStatsBadge === 'function') updateStatsBadge();
     } catch (err) {
         console.error("Error saving:", err);
-        alert("Error al guardar: " + err.message);
+        showToast("Error al guardar: " + err.message, 'error');
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = 'Guardar Cambios';
@@ -1196,7 +1196,7 @@ window.editMiembro = async function (id) {
     const record = cachedData.miembros.find(m => m.id == id) ||
         (await supabaseClient.from('miembros').select('*').eq('id', id).single()).data;
 
-    if (!record) return alert("No se encontró el registro");
+    if (!record) return showToast("No se encontró el registro", 'error');
     await showMiembroForm(record, id);
 };
 
@@ -1447,7 +1447,7 @@ async function showMiembroForm(record, id) {
 
 window.editPadrino = async function (id) {
     const { data: record, error } = await supabaseClient.from('padrinos').select('*').eq('padrinoid', id).single();
-    if (error || !record) return alert("Error al cargar datos");
+    if (error || !record) return showToast("Error al cargar datos", 'error');
 
     const html = `
         <div class="form-group">
@@ -1470,7 +1470,7 @@ window.addPadrino = function () {
 
 window.editStatus = async function (id) {
     const { data: record, error } = await supabaseClient.from('status').select('*').eq('idst', id).single();
-    if (error || !record) return alert("Error al cargar datos");
+    if (error || !record) return showToast("Error al cargar datos", 'error');
 
     const html = `
         <div class="form-group">
@@ -1511,12 +1511,12 @@ window.deleteMiembro = async function (id) {
     try {
         const { error } = await supabaseClient.from('miembros').delete().eq('id', id);
         if (error) throw error;
-        alert("Miembro eliminado exitosamente");
+        showToast("Miembro eliminado exitosamente", 'success');
         loadSection('miembros');
         if (typeof updateStatsBadge === 'function') updateStatsBadge();
     } catch (err) {
         console.error("Error deleting miembro:", err);
-        alert("Error al eliminar: " + err.message);
+        showToast("Error al eliminar: " + err.message, 'error');
     }
 };
 
@@ -1526,10 +1526,10 @@ window.deletePadrino = async function (id) {
     try {
         const { error } = await supabaseClient.from('padrinos').delete().eq('padrinoid', id);
         if (error) throw error;
-        alert("Padrino eliminado");
+        showToast("Padrino eliminado exitosamente", 'success');
         loadSection('padrinos');
     } catch (err) {
-        alert("Error al eliminar: " + err.message);
+        showToast("Error al eliminar: " + err.message, 'error');
     }
 };
 
@@ -1539,10 +1539,10 @@ window.deleteStatus = async function (id) {
     try {
         const { error } = await supabaseClient.from('status').delete().eq('idst', id);
         if (error) throw error;
-        alert("Status eliminado");
+        showToast("Status eliminado exitosamente", 'success');
         loadSection('status');
     } catch (err) {
-        alert("Error al eliminar: " + err.message);
+        showToast("Error al eliminar: " + err.message, 'error');
     }
 };
 
